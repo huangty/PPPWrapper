@@ -1,0 +1,21 @@
+Setup Environment
+================
+sudo ifconfig veth0 166.129.123.9 netmask 255.255.255.255
+sudo route add -net 10.64.64.64 netmask 255.255.255.255 veth0
+sudo route del -net 10.64.64.64 netmask 255.255.255.255 ppp0
+sudo route add default dev veth0
+sudo route del default dev ppp0
+
+Compile
+================
+gcc -lpthread wrapper.c -o wrapper
+sudo ./wrapper ppp0 veth1
+
+
+Recover Environment
+================
+sudo route del -net 10.64.64.64 netmask 255.255.255.255 veth0
+sudo route add -net 10.64.64.64 netmask 255.255.255.255 ppp0
+sudo route add default dev ppp0
+sudo route del default dev veth0
+
