@@ -114,69 +114,6 @@ void PrintPacketInHex(unsigned char *packet, int len)
 	printf("\n\n--------Packet---Ends-----\n\n");
 }
 
-
-
-/* IPC Mechanism code */
-#define PATHNAME_FTOK	"/etc/services"
-#define PROJ_ID_FTOK	1	
-#define PERMISSION	0644
-
-typedef struct Message{
-	long mtype;
-	unsigned char *packet;
-	int packet_len;
-}Message;
-
-int CreateMessageQueue(void)
-{
-	int messageQ;
-	key_t key;
-	
-	/* convert a pathname and a project identifier to a System V IPC key */
-	if((key = ftok(PATHNAME_FTOK, PROJ_ID_FTOK)) == -1)
-	{
-		perror("FTOK() failed ! - exiting \n");
-		exit(-1);
-	}
-
-	if((messageQ = msgget(key, PERMISSION | IPC_CREAT)) == -1)
-	{
-		perror("msgget() failed - Exiting\n");
-		exit(-1);
-	}
-	return messageQ;
-}
-
-void SendMessage(int messageQ, Message buf)
-{
-	if((msgsnd(messageQ, &buf, sizeof(Message), 0)) == -1)
-	{
-		perror("Message send failed\n");
-	}
-}
-
-Message *ReceiveMessage(int messageQ)
-{
-	Message *buf = (Message *)malloc(sizeof(Message));
-	
-	if((msgrcv(messageQ, buf, sizeof(Message), 0, 0)) == -1)
-	{
-		perror("Receive failed");
-		free(buf);
-		buf = NULL;
-	}
-
-	return buf;
-}
-
-void DestroyMessageQueue(int messageQ)
-{
-	if((msgctl(messageQ, IPC_RMID, NULL)) == -1)
-	{
-		perror("Could not destroy Message Queue\n");
-	}
-}
-
 unsigned int getIPAddr(char *interface){
 	struct ifreq ifr;
 	int fd;
@@ -248,8 +185,6 @@ void *sniffer_thread(void *arg)
 	ArpHeader *arp_header;
 	unsigned int ppp_ip;
 	unsigned char *pkt;
-	int messageQueue = *((int *)arg);
-	Message buff;
 	struct iphdr *linux_iphdr;
 
 
@@ -332,8 +267,6 @@ void *injector_thread(void *arg)
 	IpHeader *ip_header;
 	ArpHeader *arp_header;
 	unsigned char *pkt;
-	int messageQueue = *((int *)arg);
-	Message buff;
 	unsigned char temp[6];
 	unsigned int ppp_ip = getIPAddr(interface_in);
 
@@ -457,21 +390,15 @@ int main(int argc, char **argv)
 	pthread_t sniffer;
 	pthread_t injector;
 
-	/* The mode of communication between the threads will be through the message queue*/
-	int messageQueue;
-
-	/* Initialize the IPC mechanism */
-	messageQueue = CreateMessageQueue();
-		
 
 	/* Start the threads - Pass them the message queue id as argument */
-	if((pthread_create(&sniffer, NULL, sniffer_thread, &messageQueue)) != 0)
+	if((pthread_create(&sniffer, NULL, sniffer_thread)) != 0)
 	{
 		printf("Error creating Sniffer thread - Exiting\n");
 		exit(-1);
 	}
 
-	if((pthread_create(&injector, NULL, injector_thread, &messageQueue)) != 0)
+	if((pthread_create(&injector, NULL, injector_thread)) != 0)
 	{
 		printf("Error creating Injector thread - Exiting\n");
 		exit(-1);
@@ -480,9 +407,6 @@ int main(int argc, char **argv)
 	/* Wait for the threads to exit */
 	pthread_join(sniffer);
 	pthread_join(injector);
-
-	/* Cleanup code */
-	DestroyMessageQueue(messageQueue);
 
 	return 0;
 }
