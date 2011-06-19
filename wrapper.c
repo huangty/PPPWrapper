@@ -9,23 +9,24 @@
 * based on the code from: http://www.security-freak.net/architecture/ArpDos.c
 **/
 
-#include<strings.h>
-#include<string.h>
-#include<stdio.h>
-#include<stdlib.h>
-#include<sys/socket.h>
-#include<netinet/in.h>
-#include<linux/if_packet.h>
-#include<linux/if_ether.h>
-#include<errno.h>
-#include<sys/ioctl.h>
-#include<net/if.h>
-#include<sys/types.h>
-#include<sys/ipc.h>
-#include<sys/msg.h>
-#include<net/if_arp.h>
-#include<arpa/inet.h>
-#include<netinet/ether.h>
+#include <strings.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <linux/if_packet.h>
+#include <linux/if_ether.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+//#include <sys/msg.h>
+#include <net/if_arp.h>
+#include <arpa/inet.h>
+#include <netinet/ether.h>
 
 /* Global */
 char *interface_in;
@@ -392,21 +393,21 @@ int main(int argc, char **argv)
 
 
 	/* Start the threads - Pass them the message queue id as argument */
-	if((pthread_create(&sniffer, NULL, sniffer_thread)) != 0)
+	if((pthread_create(&sniffer, NULL, sniffer_thread, NULL)) != 0)
 	{
 		printf("Error creating Sniffer thread - Exiting\n");
 		exit(-1);
 	}
 
-	if((pthread_create(&injector, NULL, injector_thread)) != 0)
+	if((pthread_create(&injector, NULL, injector_thread, NULL)) != 0)
 	{
 		printf("Error creating Injector thread - Exiting\n");
 		exit(-1);
 	}
 
 	/* Wait for the threads to exit */
-	pthread_join(sniffer);
-	pthread_join(injector);
+	pthread_join(sniffer, NULL);
+	pthread_join(injector, NULL);
 
 	return 0;
 }
