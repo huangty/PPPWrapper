@@ -240,7 +240,7 @@ void *sniffer_thread(void *arg)
 			counter-- ;
 
 			if( SendRawPacket(raw_veth, pkt, pkt_len) ){
-				//	printf("SNIFFER: Forword the IP Packet to Host \n");
+					printf("SNIFFER: Forword the IP Packet to Host \n");
 			}else{
 					printf("SNIFFER: Fail to forward the IP Packet to Host\n");
 			}
@@ -304,7 +304,7 @@ void *injector_thread(void *arg)
 		}
 		else
 		{
-			printf("INJECTOR: received raw socket from veth0!\n");
+			printf("INJECTOR: received raw socket from %s\n", interface_out);
 			
 			if(len < sizeof(EthernetHeader))
 			{
@@ -325,6 +325,8 @@ void *injector_thread(void *arg)
 				memcpy(ethernet_header->destination, ethernet_header->source, 6);
 				memcpy(ethernet_header->source , (void *)ether_aton(VETH1_MAC), 6);
 				arp_header->opcode = htons(ARPOP_REPLY);
+                                memcpy(arp_header->dest_hardware, arp_header->source_hardware, 6);
+                                memcpy(arp_header->source_hardware, (void *)ether_aton(VETH1_MAC), 6);
 				memcpy(temp, arp_header->source_ip, 4);
 				memcpy(arp_header->source_ip, arp_header->dest_ip, 4);
 				memcpy(arp_header->dest_ip, temp, 4);
