@@ -6,10 +6,14 @@ sudo route del -net 10.64.64.64 netmask 255.255.255.255 ppp0
 sudo route add default dev veth0
 sudo route del default dev ppp0
 
-Compile
+Compile on PC
 ================
 gcc -lpthread wrapper.c -o wrapper
 sudo ./wrapper ppp0 veth1
+
+Compile for Android
+================
+make CROSS_COMPILE=arm-eabi-
 
 
 Recover Environment
