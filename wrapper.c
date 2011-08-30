@@ -13,7 +13,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <linux/if_packet.h>
@@ -27,11 +26,14 @@
 #include <net/if_arp.h>
 #include <arpa/inet.h>
 #include <netinet/ether.h>
+#include <pthread.h>
+#include <signal.h>
+#include <unistd.h>
 
 /* Global */
 char *interface_in;
 char *interface_out;
-
+unsigned int ppp_ip;
 
 /* Raw socket creation/read/write code */
 
@@ -124,8 +126,19 @@ unsigned int getIPAddr(char *interface){
 	ioctl(fd, SIOCGIFADDR, &ifr);
 	close(fd); 
 	
-	//printf("%s: %s\n", interface, inet_ntoa( ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr ));
+	printf("%s: %s\n", interface, inet_ntoa( ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr ));
 	return inet_addr(inet_ntoa( ((struct sockaddr_in *) &ifr.ifr_addr)->sin_addr) );
+}
+
+void print_ip(int ip, char* ip_string)
+{
+    unsigned char bytes[4];
+    bytes[0] = ip & 0xFF;
+    bytes[1] = (ip >> 8) & 0xFF;
+    bytes[2] = (ip >> 16) & 0xFF;
+    bytes[3] = (ip >> 24) & 0xFF;       
+	sprintf(ip_string, "%d.%d.%d.%d\0", bytes[0], bytes[1], bytes[2], bytes[3]); 
+	return;
 }
 /* Ethernet and Arp specific headers ripped from the packet injection tutorial */
 
@@ -168,14 +181,15 @@ typedef struct IpHeader {
 
 
 
-/* Sniffer Thread */
+/* Sniffer Thread -- get packets from PPP, pass it to Veth*/
 
 #define MAX_PACKETS 1
 #define BUF_SIZE 2048
 
 void *sniffer_thread(void *arg)
 {
-	int raw_ppp, raw_veth;
+	int raw_ppp;
+	int raw_veth;
 	unsigned char packet_buffer[BUF_SIZE]; 
 	int len;
 	struct sockaddr_ll packet_info;
@@ -184,14 +198,9 @@ void *sniffer_thread(void *arg)
 	EthernetHeader *ethernet_header;
 	IpHeader *ip_header;
 	ArpHeader *arp_header;
-	unsigned int ppp_ip;
 	unsigned char *pkt;
 	struct iphdr *linux_iphdr;
 
-
-	
-	printf("inside sniffer thread\n");
-	ppp_ip = getIPAddr(interface_in);
 	/* create the raw socket*/
 	raw_ppp = CreateRawSocket(PF_PACKET, ETH_P_ALL);
 	raw_veth = CreateRawSocket(PF_PACKET, ETH_P_ALL);
@@ -200,14 +209,18 @@ void *sniffer_thread(void *arg)
 	BindRawSocketToInterface(interface_in, raw_ppp, ETH_P_ALL);
 	BindRawSocketToInterface(interface_out, raw_veth, ETH_P_ALL);
 
+	
+	printf("inside sniffer thread\n");
+	//ppp_ip = getIPAddr(interface_in);
+	
 	/* Start Sniffing and print Hex of every packet */
 	while(1)
 	{
-		printf("waiting for packets to come in .... \n");
+		printf("SNIFFER: waiting for packets to come in from PPP.... \n");
 		bzero(packet_buffer, BUF_SIZE);
 		if((len = recvfrom(raw_ppp, packet_buffer, BUF_SIZE, 0, (struct sockaddr*)&packet_info, &packet_info_size)) == -1)
 		{
-			perror("Recv from returned -1: ");
+			perror("Recv from PPP returned -1: ");
 			exit(-1);
 		}
 		else
@@ -223,11 +236,12 @@ void *sniffer_thread(void *arg)
 			/* Packet has been received successfully !! */
 			/* Check if it is IP */
 			ip_header = (IpHeader *)packet_buffer;
-			if(ip_header->ip_dst != ppp_ip){ //the destination is not to the ppp, no need to forward to veth
+			if(ip_header->ip_dst != ppp_ip || ip_header->ip_src == ppp_ip ){ 
+				//the destination is not to the ppp, no need to forward to veth or, the src is ppp then will loop
 				continue;
-			}
+			}			
 			
-			/* Send the packet to the injector for modification */
+			
 			int pkt_len = (len + sizeof(EthernetHeader));
 			pkt = (unsigned char *)malloc(len + sizeof(EthernetHeader));
 			memcpy(pkt+sizeof(EthernetHeader), packet_buffer, len);
@@ -251,10 +265,11 @@ void *sniffer_thread(void *arg)
 	}
 	close(raw_ppp);
 	close(raw_veth);
+	pthread_exit(NULL);
 }
 
 
-/* Injector Thread */
+/* Injector Thread -- forward packet from the host (veth) to ppp */
 
 void *injector_thread(void *arg)
 {
@@ -269,7 +284,9 @@ void *injector_thread(void *arg)
 	ArpHeader *arp_header;
 	unsigned char *pkt;
 	unsigned char temp[6];
-	unsigned int ppp_ip = getIPAddr(interface_in);
+	//unsigned int ppp_ip = getIPAddr(interface_in);
+	
+	char ip_string[10]="\0";
 
 
 	printf("inside injector thread\n");
@@ -281,11 +298,6 @@ void *injector_thread(void *arg)
 		perror("setsockopt:");
 		exit(-1);
 	}
-	/*if( (raw_ppp = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) <0 ){
-		perror("socket():");
-		exit(1);
-	}*/
-
 	raw_veth = CreateRawSocket(PF_PACKET, ETH_P_ALL);
 
 	/* Bind socket to interface */
@@ -295,11 +307,11 @@ void *injector_thread(void *arg)
 	/* Start Sniffing and print Hex of every packet */
 	while(1)
 	{
-		printf("waiting for packets to come in .... \n");
+		printf("INJECTOR: waiting for packets to come in .... \n");
 		bzero(packet_buffer, BUF_SIZE);
 		if((len = recvfrom(raw_veth, packet_buffer, BUF_SIZE, 0, (struct sockaddr*)&packet_info, &packet_info_size)) == -1)
 		{
-			perror("Recv from returned -1: ");
+			perror("Recv from veth returned -1: ");
 			exit(-1);
 		}
 		else
@@ -320,34 +332,43 @@ void *injector_thread(void *arg)
 				if(len < (sizeof(EthernetHeader) + sizeof(ArpHeader)) ){
 					printf("Malformat ARP\n");
 				}
-				printf("Got an ARP!\n\n\n");
 				arp_header = (ArpHeader *)(packet_buffer + sizeof(EthernetHeader));
-				memcpy(ethernet_header->destination, ethernet_header->source, 6);
-				memcpy(ethernet_header->source , (void *)ether_aton(VETH1_MAC), 6);
-				arp_header->opcode = htons(ARPOP_REPLY);
-                                memcpy(arp_header->dest_hardware, arp_header->source_hardware, 6);
-                                memcpy(arp_header->source_hardware, (void *)ether_aton(VETH1_MAC), 6);
-				memcpy(temp, arp_header->source_ip, 4);
-				memcpy(arp_header->source_ip, arp_header->dest_ip, 4);
-				memcpy(arp_header->dest_ip, temp, 4);
-				if(SendRawPacket(raw_veth, packet_buffer, sizeof(EthernetHeader) + sizeof(ArpHeader)) ){
-						printf("INJECTOR: Fake the arp reply\n");
-				}else{
-						printf("INJECTOR: Fail to send the arp reply\n");
+				if( arp_header->opcode == htons(ARPOP_REQUEST)){
+					printf("Got an ARP Request!\n\n\n");
+					memcpy(ethernet_header->destination, ethernet_header->source, 6);
+					memcpy(ethernet_header->source , (void *)ether_aton(VETH1_MAC), 6);
+					arp_header->opcode = htons(ARPOP_REPLY);
+					memcpy(arp_header->dest_hardware, arp_header->source_hardware, 6);
+					memcpy(arp_header->source_hardware, (void *)ether_aton(VETH1_MAC), 6);
+					memcpy(temp, arp_header->source_ip, 4);
+					memcpy(arp_header->source_ip, arp_header->dest_ip, 4);
+					memcpy(arp_header->dest_ip, temp, 4);
+					if(SendRawPacket(raw_veth, packet_buffer, sizeof(EthernetHeader) + sizeof(ArpHeader)) ){
+							printf("INJECTOR: Fake the arp reply\n");
+					}else{
+							printf("INJECTOR: Fail to send the arp reply\n");
+					}
 				}
 				continue;
 			}
 			
-			/* Send the packet to the injector for modification */
+			
 			int pkt_len = (len - sizeof(EthernetHeader));
 			pkt = (unsigned char *)malloc(len - sizeof(EthernetHeader));
 			memcpy(pkt, packet_buffer+sizeof(EthernetHeader), pkt_len);
 			ip_header = (IpHeader *) pkt;
-			if(ip_header->ip_src != ppp_ip){ //the destination is not to the ppp, no need to forward to veth
+			
+	
+			/*print_ip(ppp_ip, ip_string);
+			printf("PPP_IP = %s\n", ip_string);
+		    print_ip(ip_header->ip_src, ip_string);
+		    printf("Packet IP = %s\n", ip_string);*/
+
+			if(ip_header->ip_src != ppp_ip){ //the source is not set as ppp, no need to inject to PPP
 				continue;
 			}
 			
-			counter-- ;
+			//counter-- ;
 			
 			struct sockaddr_in sin;
 			memset(&sin, 0, sizeof(sin));
@@ -360,11 +381,12 @@ void *injector_thread(void *arg)
 					printf("INJECTOR: Fail to forward the IP Packet to PPP\n");
 			}*/
 			if (sendto(raw_ppp, pkt, pkt_len, 0, (struct sockaddr *)&sin, sizeof(struct sockaddr)) < 0){
+				printf("INJECTOR: Fail to send packets to PPP interface \n");
 				PrintPacketInHex(pkt, pkt_len);
 				perror("sendto");
 				continue;
 			}else{
-					printf("INJECTOR: Forword the IP Packet to PPP \n");
+				printf("INJECTOR: Forword the IP Packet to PPP \n");
 			}
 
 			/* Print packet in hex */		
@@ -373,25 +395,44 @@ void *injector_thread(void *arg)
 	}
 	close(raw_ppp);
 	close(raw_veth);
-
+	pthread_exit(NULL);
 }
 
+void thread_termination_handler(int signo){
+    if (signo == SIGINT) {
+        printf("Ctrl+C detected !!! \n");
+	}
+    (void)signo;
+}
 
 /* The main function */
-
 int main(int argc, char **argv)
 {
 	/* Assign the Interface e.g. eth0 */
 	interface_in = argv[1];
 	interface_out = argv[2];
-	if(argc != 3){
-		printf("usage: %s interface_in interface_out", argv[0]);
+	if(argc != 4){
+		printf("usage: %s interface_ppp interface_veth ppp_ip", argv[0]);
 		return 0;	
 	}
+	ppp_ip = inet_addr(argv[3]);
 
+	char ip_string[10] = "\0";
+	print_ip(ppp_ip, ip_string);
+	printf("PPP_IP = %s\n", ip_string);
+	
 	/* The Thread Ids */
 	pthread_t sniffer;
 	pthread_t injector;
+	
+	/*Signal Handling*/
+	sigset_t mask, old_mask;
+	siginfo_t info;
+	/* Create a mask holding only SIGINT - ^C Interrupt */
+	sigemptyset( &mask );
+	sigaddset( &mask, SIGINT );
+	/* Set the mask for our main thread to include SIGINT */
+	pthread_sigmask( SIG_BLOCK, &mask, &old_mask);
 
 
 	/* Start the threads - Pass them the message queue id as argument */
@@ -406,11 +447,23 @@ int main(int argc, char **argv)
 		printf("Error creating Injector thread - Exiting\n");
 		exit(-1);
 	}
+	
+	// Install the signal handler for SIGINT.
+    struct sigaction s;
+    s.sa_handler = thread_termination_handler;
+    sigemptyset(&s.sa_mask);
+    s.sa_flags = 0;
+    sigaction(SIGINT, &s, NULL);
+
+    // Restore the old signal mask only for this thread.
+    pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
 
 	/* Wait for the threads to exit */
 	pthread_join(sniffer, NULL);
 	pthread_join(injector, NULL);
 
+   // Done.
+    puts("Terminated.");
 	return 0;
 }
 

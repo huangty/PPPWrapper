@@ -9,7 +9,8 @@ sudo route del default dev ppp0
 Compile on PC
 ================
 gcc -lpthread wrapper.c -o wrapper
-sudo ./wrapper ppp0 veth1
+sudo ./wrapper ppp0 veth1 3G_IPADDR
+(see wrapper.sh for sample usage)
 
 Compile for Android
 ================
@@ -22,4 +23,4 @@ sudo route del -net 10.64.64.64 netmask 255.255.255.255 veth0
 sudo route add -net 10.64.64.64 netmask 255.255.255.255 ppp0
 sudo route add default dev ppp0
 sudo route del default dev veth0
-
+(see test_wrapper.sh to sample environment setup)
