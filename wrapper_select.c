@@ -199,11 +199,11 @@ void sniffer(int raw_ppp, int raw_veth)
 	unsigned char *pkt;
 	struct iphdr *linux_iphdr;
 
-	printf("inside sniffer\n");
+	//printf("inside sniffer\n");
 	
 	/* Start Sniffing and print Hex of every packet */
 	{
-		printf("SNIFFER: waiting for packets to come in from PPP.... \n");
+		//printf("SNIFFER: waiting for packets to come in from PPP.... \n");
 		bzero(packet_buffer, BUF_SIZE);
 		if((len = recvfrom(raw_ppp, packet_buffer, BUF_SIZE, 0, (struct sockaddr*)&packet_info, &packet_info_size)) == -1)
 		{
@@ -241,7 +241,8 @@ void sniffer(int raw_ppp, int raw_veth)
 			counter-- ;
 
 			if( SendRawPacket(raw_veth, pkt, pkt_len) ){
-					printf("SNIFFER: Forword the IP Packet to Host \n");
+					//printf("SNIFFER: Forword the IP Packet to Host \n");
+					printf(".");
 			}else{
 					printf("SNIFFER: Fail to forward the IP Packet to Host\n");
 			}
@@ -271,12 +272,12 @@ void injector(int raw_ppp, int raw_veth)
 	char ip_string[10]="\0";
 
 
-	printf("inside injector\n");
+	//printf("inside injector\n");
 
 	
 	/* Start Sniffing and print Hex of every packet */
 	{
-		printf("INJECTOR: waiting for packets to come in .... \n");
+		//printf("INJECTOR: waiting for packets to come in .... \n");
 		bzero(packet_buffer, BUF_SIZE);
 		if((len = recvfrom(raw_veth, packet_buffer, BUF_SIZE, 0, (struct sockaddr*)&packet_info, &packet_info_size)) == -1)
 		{
@@ -285,7 +286,7 @@ void injector(int raw_ppp, int raw_veth)
 		}
 		else
 		{
-			printf("INJECTOR: received raw socket from %s\n", interface_veth);
+			//printf("INJECTOR: received raw socket from %s\n", interface_veth);
 			
 			if(len < sizeof(EthernetHeader))
 			{
@@ -341,7 +342,8 @@ void injector(int raw_ppp, int raw_veth)
 				perror("sendto");
 				return;
 			}else{
-				printf("INJECTOR: Forword the IP Packet to PPP \n");
+			//	printf("INJECTOR: Forword the IP Packet to PPP \n");
+				printf("/");
 			}
 
 			/* Print packet in hex */		
