@@ -99,7 +99,6 @@ int SendRawPacket(int rawsock, unsigned char *pkt, int pkt_len)
 		printf("Error no: %s\n", strerror(errno));
 		return 0;
 	}
-
 	return 1;
 }
 
@@ -188,8 +187,8 @@ typedef struct IpHeader {
 /*sniffer: ppp->veth*/
 void sniffer(int raw_ppp, int raw_veth)
 {
-	unsigned char packet_buffer[BUF_SIZE]; 
 	int len;
+	unsigned char packet_buffer[BUF_SIZE]; 
 	struct sockaddr_ll packet_info;
 	int packet_info_size = sizeof(packet_info_size);
 	int counter = MAX_PACKETS;
@@ -230,7 +229,7 @@ void sniffer(int raw_ppp, int raw_veth)
 			
 			
 			int pkt_len = (len + sizeof(EthernetHeader));
-			pkt = (unsigned char *)malloc(len + sizeof(EthernetHeader));
+			pkt = (unsigned char *)malloc(len + sizeof(EthernetHeader)); //free in SendRawPacket
 			memcpy(pkt+sizeof(EthernetHeader), packet_buffer, len);
 			
 			/*faking the ethernet header*/
@@ -242,13 +241,14 @@ void sniffer(int raw_ppp, int raw_veth)
 
 			if( SendRawPacket(raw_veth, pkt, pkt_len) ){
 					//printf("SNIFFER: Forword the IP Packet to Host \n");
-					printf(".");
+					printf(".");			
 			}else{
 					printf("SNIFFER: Fail to forward the IP Packet to Host\n");
 			}
-
+			free(pkt);
 			/* Print packet in hex */
 			//PrintPacketInHex(pkt, (len + sizeof(EthernetHeader)));
+			
 		}
 	}
 }
@@ -340,12 +340,14 @@ void injector(int raw_ppp, int raw_veth)
 				printf("INJECTOR: Fail to send packets to PPP interface \n");
 				PrintPacketInHex(pkt, pkt_len);
 				perror("sendto");
+				free(pkt);
 				return;
 			}else{
 			//	printf("INJECTOR: Forword the IP Packet to PPP \n");
 				printf("/");
 			}
 
+			free(pkt);
 			/* Print packet in hex */		
 			//PrintPacketInHex(pkt, pkt_len);
 		}
