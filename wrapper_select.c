@@ -405,7 +405,7 @@ int main(int argc, char **argv)
 	int stat;                      // holds return value for select();
 	while(1){
 		waitv.tv_sec = 0;
-		waitv.tv_usec = 0; //don't wait at all 
+		waitv.tv_usec = 100000; //wait 100 ms
 		FD_ZERO(&read_flag_snif);
 		FD_ZERO(&read_flag_inject);
 		FD_SET(raw_snif_ppp, &read_flag_snif);
